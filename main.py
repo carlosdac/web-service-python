@@ -1,6 +1,7 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
 import sqlite3
+import json
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     
@@ -19,7 +20,25 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.create_connection_db('db.sqlite3')
         self.create_tables()
         super().__init__(*args, **kwargs)
-    
+    def is_authorized(self):
+        headers = dict(self.headers)
+        try:
+            user = headers['user']
+            return user
+        except:
+            return None
+
+    def get_body_request(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        return eval(post_data.decode('utf-8'))
+
+    def send_response_custom(self, status_code, data,headers={}):
+        data = json.dumps(data)
+        self.send_response(status_code)
+        self.end_headers()
+        self.wfile.write(b"" + str(data).encode())
+
     def do_GET(self):
         exists, route = self.in_routes(self.path, self.routes_GET)
         if not exists:
@@ -56,47 +75,101 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         return self.path.split("/")[2]
 
     def get_all_messages(self):
-        pass
+        id_message = self.extract_id()
+        user = self.is_authorized()
+        if user == None:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+            return
+
+        usuario = Usuario().get_usuario(id=user)
+        if usuario == None:
+            self.send_response_custom(404, {"error": "Usuário não encontrado"})
+            return
+        messages = Message().get_messages_for_user_id(id=user)
+        self.send_response_custom(200, messages)
 
     def get_one_message(self):
         id_message = self.extract_id()
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"{'message': 'GET one message'}  " + id_message.encode())
+        user = self.is_authorized()
+        if user == None:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+            return
+        
+        usuario = Usuario().get_usuario(id=user)
+        if usuario == None:
+            self.send_response_custom(404, {"error": "Usuário não encontrado"})
+            return
+
+        message = Message().get_message_for_id(id=user)
+
+        if message.remetente.id != usuario.id and message.destinatario.id != usuario.id:
+            self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
+            return
+
+
+        self.send_response_custom(200, message.to_dict())
+
 
     def send_message(self):
-        pass
+        headers = dict(self.headers)
+        try:
+            user = headers['user']
+        except:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+        
+        campos = ['assunto', 'corpo', 'destinatario']
+        post_data = self.get_body_request()
+
+        contador_campos = 0
+        for chave in post_data:
+            if chave not in campos:
+                self.send_response_custom(400, {"error": "Foi enviado um campo (" + chave + ") que não era esperado."})
+                return
+            else:
+                if len(str(post_data[chave])) > 0:
+                    contador_campos += 1
+        if contador_campos < len(campos):
+            self.send_response_custom(400, {"error": "Não foi enviado um ou mais campos que eram esperados."})
+            return
+        remetente = Usuario().get_usuario(id=user)
+        destinatario = Usuario().get_usuario(id=post_data['destinatario'])
+
+        if remetente == None:
+            self.send_response_custom(401, {"error": "Remetente não encontrado"})
+            return
+        
+        if destinatario == None:
+            self.send_response_custom(404, {"error": "Destinatário não encontrado"})
+            return
+
+        if remetente.id == destinatario.id:
+            self.send_response_custom(403, {"error": "O remetente não pode enviar uma mensagem para si"})
+            return
+
+        assunto = post_data['assunto']
+        corpo = post_data['corpo']
+
+        mensagem = Message(remetente, destinatario, assunto=assunto, corpo=corpo)
+        mensagem.save()
+
+        self.send_response_custom(201, {"message": "ok"})
+        
 
     def login(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        post_data = eval(post_data.decode('utf-8'))
+        post_data = self.get_body_request()
         try:
             usuario = post_data['usuario']
         except KeyError as e:
-            error = 400
-            message = "Bad Request"
-            response = {
-                "error": message
-            }
-            self.send_response(error)
-            self.end_headers()
-            self.wfile.write(str(response).encode('utf-8'))    
+            self.send_response_custom(400, {"error": "Bad Request"})
             return
         
-        
-
-        response_code = 200
-        response_data = {
-            "message": "ok"
-        }
+        print(usuario)
         usuario_db = Usuario(nome=usuario)
         retorno = usuario_db.get_usuario(nome=usuario_db.nome)
         if retorno == None or retorno == 0:
             print(usuario_db.save())
-        self.send_response(response_code)
-        self.end_headers()
-        self.wfile.write(str(response_data).encode('utf-8'))
+        usuario_db= Usuario().get_usuario(nome=usuario_db.nome)
+        self.send_response_custom(200, {"message": "ok", "user_id": usuario_db.id})
 
     def answer_message(self):
         id_message = self.extract_id()
@@ -115,22 +188,51 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         try:
             self.conection = sqlite3.connect(db_file)
             print(sqlite3.version)
-        except Error as e:
+        except Exception as e:
             print(e)
     def create_tables(self):
-        commands = ["""CREATE TABLE IF NOT EXISTS usuario (
-	    id INTEGER PRIMARY KEY AUTOINCREMENT,
-   	    nome TEXT NOT NULL UNIQUE);""", """ CREATE TABLE IF NOT EXISTS message ( 
+        commands = ["""CREATE TABLE IF NOT EXISTS usuario(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL UNIQUE
+        );
+
+
+        CREATE TABLE IF NOT EXISTS message ( 
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        remetente INTEGER NOT NULL,
-        destinatario INTEGER NOT NULL,
-        FOREIGN KEY(remetente) references usuario(id),
-        FOREIGN KEY(destinatario) references usuario(id)
-        )"""]
+        remetente_id INTEGER NOT NULL,
+        destinatario_id INTEGER NOT NULL,
+        assunto TEXT NOT NULL,
+        corpo TEXT NOT NULL,
+        FOREIGN KEY(remetente_id) references usuario(id),
+        FOREIGN KEY(destinatario_id) references usuario(id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS foward( 
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER  NOT NULL,
+        remetente_id INTEGER NOT NULL,
+        destinatario_id INTEGER NOT NULL,
+        FOREIGN KEY(remetente_id) references usuario(id),
+        FOREIGN KEY(destinatario_id) references usuario(id),
+        FOREIGN KEY(message_id) references message(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS answer( 
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER  NOT NULL,
+        remetente_id INTEGER NOT NULL,
+        destinatario_id INTEGER NOT NULL,
+        corpo TEXT NOT NULL,
+        FOREIGN KEY(remetente_id) references usuario(id),
+        FOREIGN KEY(destinatario_id) references usuario(id),
+        FOREIGN KEY(message_id) references message(id)
+        );"""]
         for command in commands:
             try:
                 c = self.conection.cursor()
-                return c.execute(command)
+                return c.executescript(command)
             except Exception as e:
                 print(e)
 
@@ -141,7 +243,7 @@ class ModelDB():
         try:
             self.conection = sqlite3.connect(db_file)
             print(sqlite3.version)
-        except Error as e:
+        except Exception as e:
             print(e)
     def send_command_db(self, command, type=''):
         try:
@@ -150,7 +252,6 @@ class ModelDB():
             c.execute(command)
             if type == 'insert':
                 self.conection.commit()
-            # self.conection.close()
             if type == 'select':
                 rows = c.fetchall()
                 return rows
@@ -158,7 +259,7 @@ class ModelDB():
             print(e)
 
 class Usuario(ModelDB):
-    def __init__(self, nome, id=None):
+    def __init__(self, nome='', id=None):
         self.nome = nome
         self.id = id
         self.create_connection_db()
@@ -168,17 +269,17 @@ class Usuario(ModelDB):
         print(command)
         self.send_command_db(command, type='insert')
     
-    def get_usuario(self, id=None, nome=''):
-        command = """SELECT * FROM usuario WHERE id={}
-        """.format(id)
+    def get_usuario(self, id=-1, nome='',all=False):
+        command = """SELECT * FROM usuario WHERE id={} or nome like '{}'
+        """.format(id, nome)
         command_nome = """SELECT * FROM usuario"""
-        if nome != '':
+        if all:
             retorno =  self.send_command_db(command_nome, type='select')
         else:
             retorno =  self.send_command_db(command, type='select')
         print(retorno)
         if retorno == None or len(retorno) == 0:
-            return retorno
+            return None
         else:
             if len(retorno) > 1:
                 lista = []
@@ -187,22 +288,53 @@ class Usuario(ModelDB):
             else:
                 return Usuario(nome=retorno[0][1], id=retorno[0][0])
 
-
+    def to_dict(self):
+        return {"nome": self.nome,"id": self.id}
 
 class Message(ModelDB):
-    def __init__(self, remetente, destinatario, assunto, corpo, id=None):
+    def __init__(self, remetente=None, destinatario=None, assunto=None, corpo=None, id=None):
         self.remetente = remetente
         self.destinatario = destinatario
         self.assunto = assunto
         self.corpo = corpo
         self.id = id
+        self.create_connection_db()
     def save(self):
-        command = ""
-        try:
-            c = self.conection.cursor()
-            c.execute(command)
-        except Exception as e:
-            print(e)
+        command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo) values({},{},'{}','{}')".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo)
+        self.send_command_db(command,type='insert')
+    
+    def to_dict(self):
+        return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo}
+    
+
+    def get_message_for_id(self, id):
+        command = """SELECT * FROM message WHERE id = {}""".format(id)
+        messages = self.send_command_db(command, type='select')
+
+        for message in messages:
+            id=message[0]
+            remetente=Usuario().get_usuario(id=message[1])
+            destinatario=Usuario().get_usuario(id=message[2])
+            assunto=message[3]
+            corpo=message[4]
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id)
+            return message_serializer
+        return None
+    def get_messages_for_user_id(self, id):
+        command = """SELECT * FROM message WHERE destinatario_id = {} or remetente_id = {}""".format(id, id)
+        messages = self.send_command_db(command, type='select')
+        return_list = []
+        for message in messages:
+            id=message[0]
+            remetente=Usuario().get_usuario(id=message[1])
+            destinatario=Usuario().get_usuario(id=message[2])
+            assunto=message[3]
+            corpo=message[4]
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id).to_dict()
+            print(message_serializer)
+            return_list.append(message_serializer)
+        return return_list
+
 
 httpd = HTTPServer(('localhost', 8000), SimpleHTTPRequestHandler)
 httpd.serve_forever()
