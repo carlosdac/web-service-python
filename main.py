@@ -2,6 +2,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
 import sqlite3
 import json
+import os.environ
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     
@@ -125,7 +126,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response_custom(200, message.to_dict())
 
 
-    def send_message(self, verify_body=True, message=None):
+    def send_message(self, verify_body=True, message_foward=None, message_answer=None):
         user = self.is_authorized()
         if user == None:
             self.send_response_custom(401, {"error": "Unauthorized"})
@@ -147,9 +148,15 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.send_response_custom(400, {"error": "Não foi enviado um ou mais campos que eram esperados."})
                 return
             
-        remetente = Usuario().get_usuario(id=user)
-        destinatario = Usuario().get_usuario(id=post_data['destinatario'])
 
+        remetente = Usuario().get_usuario(id=user)
+        if message_answer == None:
+            assunto = post_data['assunto']
+            destinatario = Usuario().get_usuario(id=post_data['destinatario'])
+        else:
+            destinatario = message_answer.remetente
+            assunto = message_answer.assunto
+        
         if remetente == None:
             self.send_response_custom(401, {"error": "Remetente não encontrado"})
             return
@@ -161,11 +168,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         if remetente.id == destinatario.id:
             self.send_response_custom(403, {"error": "O remetente não pode enviar uma mensagem para si"})
             return
+       
 
-        assunto = post_data['assunto']
         corpo = post_data['corpo']
-
-        mensagem = Message(remetente, destinatario, assunto=assunto, corpo=corpo, message=message)
+        
+        mensagem = Message(remetente, destinatario, assunto=assunto, corpo=corpo, message_fowarded=message_foward, message_answered=message_answer)
         mensagem.save()
 
         self.send_response_custom(201, {"message": "ok"})
@@ -189,7 +196,22 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def answer_message(self):
         id_message = self.extract_id()
-        pass
+        user = self.is_authorized()
+        if user == None:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+            return
+        
+        usuario = Usuario().get_usuario(id=user)
+        if usuario == None:
+            self.send_response_custom(404, {"error": "Usuário não encontrado"})
+            return
+
+        message = Message().get_message_by_id(id_message)
+        if (message.remetente.id != usuario.id and message.destinatario.id != usuario.id):# and (message.message != None and message.message.remetente.id != usuario.id and message.message.destinatario.id):
+            self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
+            return
+        
+        self.send_message(False, message_answer=message)
 
     def delete_message(self):
         id_message = self.extract_id()
@@ -233,12 +255,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         message = Message().get_message_by_id(id_message)
-        #message.fowards[i].remetente or destin
         if (message.remetente.id != usuario.id and message.destinatario.id != usuario.id):# and (message.message != None and message.message.remetente.id != usuario.id and message.message.destinatario.id):
             self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
             return
         
-        self.send_message(False, message)
+        self.send_message(False, message_foward=message)
 
 
     
@@ -266,7 +287,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         assunto TEXT NOT NULL,
         corpo TEXT NOT NULL,
         message_id INTEGER  NULL,
-        FOREIGN KEY(message_id) references message(id)
+        message_answer_id INTEGER  NULL,
+        FOREIGN KEY(message_id) references message(id),
+        FOREIGN KEY(message_answer_id) references message(id),
         FOREIGN KEY(remetente_id) references usuario(id),
         FOREIGN KEY(destinatario_id) references usuario(id)
         );"""]
@@ -333,25 +356,29 @@ class Usuario(ModelDB):
         return {"nome": self.nome,"id": self.id}
 
 class Message(ModelDB):
-    def __init__(self, remetente=None, destinatario=None, assunto=None, corpo=None, id=None, message=None):
+    def __init__(self, remetente=None, destinatario=None, assunto=None, corpo=None, id=None,message_answered=None, message_fowarded=None):
         self.remetente = remetente
         self.destinatario = destinatario
         self.assunto = assunto
         self.corpo = corpo
         self.id = id
-        self.message = message
+        self.message_fowarded = message_fowarded
+        self.message_answered = message_answered
 
         self.create_connection_db()
     def save(self):
-        id_message = None if self.message == None else self.message.id
-        if id_message == None:
+        id_message_foward = None if self.message_fowarded == None else self.message_fowarded.id
+        id_message_answer = None if self.message_answered == None else self.message_answered.id
+        if id_message_foward == None and id_message_answer == None:
             command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo) values({},{},'{}','{}')".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo)
+        elif id_message_foward != None:
+            command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo, message_id) values({},{},'{}','{}', {})".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo, self.message_fowarded.id)
         else:
-            command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo, message_id) values({},{},'{}','{}', {})".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo, self.message.id)
+            command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo, message_answer_id) values({},{},'{}','{}', {})".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo, self.message_answered.id)
         self.send_command_db(command,type='insert')
     
     def to_dict(self):
-        return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo, "message_fowarded": None if self.message == None else self.message.to_dict()}
+        return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo, "message_fowarded": None if self.message_fowarded == None else self.message_fowarded.to_dict(), "message_answered": None if self.message_answered == None else self.message_answered.to_dict()}
     
     def delete(self):
         # command = " UPDATE message SET message_id=null WHERE message_id={}".format(self.id)
@@ -370,7 +397,8 @@ class Message(ModelDB):
             assunto=message[3]
             corpo=message[4]
             message_fowarded = Message().get_message_by_id(id=message[5])
-            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message=message_fowarded)
+            message_answered = Message().get_message_by_id(id=message[6])
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message_fowarded=message_fowarded, message_answered=message_answered)
             return message_serializer
         return None
     def get_messages_by_user_id(self, id):
@@ -384,8 +412,8 @@ class Message(ModelDB):
             assunto=message[3]
             corpo=message[4]
             message_fowarded = Message().get_message_by_id(id=message[5])
-            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message=message_fowarded).to_dict()
-            print(message)
+            message_answered = Message().get_message_by_id(id=message[6])
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message_fowarded=message_fowarded, message_answered=message_answered).to_dict()
             print(message_serializer)
             return_list.append(message_serializer)
         return return_list
@@ -401,5 +429,5 @@ class Foward(ModelDB):
 
     def get_foward_by_id(self):
         pass
-httpd = HTTPServer(('localhost', 8000), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('localhost', environ.get('PORT', "8000")), SimpleHTTPRequestHandler)
 httpd.serve_forever()
