@@ -16,7 +16,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             '^/messages/[0-9]/foward/$': self.foward_message,
             '^/messages/[0-9]/answer/$': self.answer_message,
         } 
-        self.routes_DELETE = ['/messages/<id>/']
+        self.routes_DELETE = {
+            '^/messages/[0-9]/$': self.delete_message
+        }
         self.create_connection_db('db.sqlite3')
         self.create_tables()
         super().__init__(*args, **kwargs)
@@ -60,6 +62,16 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         else:
             print(route)
             self.routes_POST[route]()
+    def do_DELETE(self):
+        exists, route = self.in_routes(self.path, self.routes_DELETE)
+        if not exists:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"{'message': 'Not Found'}  " + self.path.encode())
+            return
+        else:
+            print(route)
+            self.routes_DELETE[route]()
         
 
     def in_routes(self, path, routes):
@@ -181,7 +193,32 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def delete_message(self):
         id_message = self.extract_id()
-        pass
+        user = self.is_authorized()
+        if user == None:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+            return
+        
+
+        usuario = Usuario().get_usuario(id=user)
+        if usuario == None:
+            self.send_response_custom(404, {"error": "Usuário não encontrado"})
+            return
+
+        message = Message().get_message_by_id(id=id_message)
+        if message == None:
+            self.send_response_custom(404, {"error": "Mensagem não encontrada"})
+            return
+
+        if message.remetente.id != usuario.id:
+            self.send_response_custom(403, {"error": "Usuário não autorizado a deletar esta mensagem."})
+            return
+        
+        try:
+            message.delete()
+            self.send_response_custom(200, {"message": "Mensagem apagada com sucesso!"})
+        except:
+            self.send_response_custom(500, {"error": "Erro no servidor"})
+
 
     def foward_message(self):
         id_message = self.extract_id()
@@ -197,7 +234,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
         message = Message().get_message_by_id(id_message)
         #message.fowards[i].remetente or destin
-        if (message.remetente.id != usuario.id and message.destinatario.id != usuario.id) and (message.message != None and message.message.remetente.id != usuario.id and message.message.destinatario.id):
+        if (message.remetente.id != usuario.id and message.destinatario.id != usuario.id):# and (message.message != None and message.message.remetente.id != usuario.id and message.message.destinatario.id):
             self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
             return
         
@@ -316,6 +353,11 @@ class Message(ModelDB):
     def to_dict(self):
         return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo, "message_fowarded": None if self.message == None else self.message.to_dict()}
     
+    def delete(self):
+        # command = " UPDATE message SET message_id=null WHERE message_id={}".format(self.id)
+        # self.send_command_db(command, type="insert")
+        command = "DELETE FROM message WHERE id={}".format(self.id)
+        self.send_command_db(command, type="insert")
 
     def get_message_by_id(self, id):
         command = """SELECT * FROM message WHERE id = {}""".format(id if id != None else -1)
