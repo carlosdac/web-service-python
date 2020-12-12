@@ -85,7 +85,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         if usuario == None:
             self.send_response_custom(404, {"error": "Usuário não encontrado"})
             return
-        messages = Message().get_messages_for_user_id(id=user)
+        messages = Message().get_messages_by_user_id(id=user)
         self.send_response_custom(200, messages)
 
     def get_one_message(self):
@@ -100,7 +100,10 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_response_custom(404, {"error": "Usuário não encontrado"})
             return
 
-        message = Message().get_message_for_id(id=user)
+        message = Message().get_message_by_id(id=id_message)
+        if message == None:
+            self.send_response_custom(404, {"error": "Mensagem não encontrada"})
+            return
 
         if message.remetente.id != usuario.id and message.destinatario.id != usuario.id:
             self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
@@ -110,27 +113,28 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response_custom(200, message.to_dict())
 
 
-    def send_message(self):
-        headers = dict(self.headers)
-        try:
-            user = headers['user']
-        except:
+    def send_message(self, verify_body=True, message=None):
+        user = self.is_authorized()
+        if user == None:
             self.send_response_custom(401, {"error": "Unauthorized"})
-        
+            return
+            
         campos = ['assunto', 'corpo', 'destinatario']
         post_data = self.get_body_request()
+        if verify_body:
 
-        contador_campos = 0
-        for chave in post_data:
-            if chave not in campos:
-                self.send_response_custom(400, {"error": "Foi enviado um campo (" + chave + ") que não era esperado."})
+            contador_campos = 0
+            for chave in post_data:
+                if chave not in campos:
+                    self.send_response_custom(400, {"error": "Foi enviado um campo (" + chave + ") que não era esperado."})
+                    return
+                else:
+                    if len(str(post_data[chave])) > 0:
+                        contador_campos += 1
+            if contador_campos < len(campos):
+                self.send_response_custom(400, {"error": "Não foi enviado um ou mais campos que eram esperados."})
                 return
-            else:
-                if len(str(post_data[chave])) > 0:
-                    contador_campos += 1
-        if contador_campos < len(campos):
-            self.send_response_custom(400, {"error": "Não foi enviado um ou mais campos que eram esperados."})
-            return
+            
         remetente = Usuario().get_usuario(id=user)
         destinatario = Usuario().get_usuario(id=post_data['destinatario'])
 
@@ -149,7 +153,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         assunto = post_data['assunto']
         corpo = post_data['corpo']
 
-        mensagem = Message(remetente, destinatario, assunto=assunto, corpo=corpo)
+        mensagem = Message(remetente, destinatario, assunto=assunto, corpo=corpo, message=message)
         mensagem.save()
 
         self.send_response_custom(201, {"message": "ok"})
@@ -181,7 +185,25 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def foward_message(self):
         id_message = self.extract_id()
-        pass
+        user = self.is_authorized()
+        if user == None:
+            self.send_response_custom(401, {"error": "Unauthorized"})
+            return
+        
+        usuario = Usuario().get_usuario(id=user)
+        if usuario == None:
+            self.send_response_custom(404, {"error": "Usuário não encontrado"})
+            return
+
+        message = Message().get_message_by_id(id_message)
+        #message.fowards[i].remetente or destin
+        if (message.remetente.id != usuario.id and message.destinatario.id != usuario.id) and (message.message != None and message.message.remetente.id != usuario.id and message.message.destinatario.id):
+            self.send_response_custom(403, {"error": "Usuário não autorizado a acessar esta mensagem."})
+            return
+        
+        self.send_message(False, message)
+
+
     
     def create_connection_db(self, db_file='db.sqlite3'):
         self.conection = None
@@ -191,7 +213,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             print(e)
     def create_tables(self):
-        commands = ["""CREATE TABLE IF NOT EXISTS usuario(
+        commands = [
+        """
+        CREATE TABLE IF NOT EXISTS usuario(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL UNIQUE
         );
@@ -204,30 +228,10 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         destinatario_id INTEGER NOT NULL,
         assunto TEXT NOT NULL,
         corpo TEXT NOT NULL,
+        message_id INTEGER  NULL,
+        FOREIGN KEY(message_id) references message(id)
         FOREIGN KEY(remetente_id) references usuario(id),
         FOREIGN KEY(destinatario_id) references usuario(id)
-        );
-
-
-        CREATE TABLE IF NOT EXISTS foward( 
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id INTEGER  NOT NULL,
-        remetente_id INTEGER NOT NULL,
-        destinatario_id INTEGER NOT NULL,
-        FOREIGN KEY(remetente_id) references usuario(id),
-        FOREIGN KEY(destinatario_id) references usuario(id),
-        FOREIGN KEY(message_id) references message(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS answer( 
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id INTEGER  NOT NULL,
-        remetente_id INTEGER NOT NULL,
-        destinatario_id INTEGER NOT NULL,
-        corpo TEXT NOT NULL,
-        FOREIGN KEY(remetente_id) references usuario(id),
-        FOREIGN KEY(destinatario_id) references usuario(id),
-        FOREIGN KEY(message_id) references message(id)
         );"""]
         for command in commands:
             try:
@@ -292,23 +296,29 @@ class Usuario(ModelDB):
         return {"nome": self.nome,"id": self.id}
 
 class Message(ModelDB):
-    def __init__(self, remetente=None, destinatario=None, assunto=None, corpo=None, id=None):
+    def __init__(self, remetente=None, destinatario=None, assunto=None, corpo=None, id=None, message=None):
         self.remetente = remetente
         self.destinatario = destinatario
         self.assunto = assunto
         self.corpo = corpo
         self.id = id
+        self.message = message
+
         self.create_connection_db()
     def save(self):
-        command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo) values({},{},'{}','{}')".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo)
+        id_message = None if self.message == None else self.message.id
+        if id_message == None:
+            command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo) values({},{},'{}','{}')".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo)
+        else:
+            command = "INSERT INTO message(remetente_id, destinatario_id, assunto, corpo, message_id) values({},{},'{}','{}', {})".format(self.remetente.id, self.destinatario.id, self.assunto, self.corpo, self.message.id)
         self.send_command_db(command,type='insert')
     
     def to_dict(self):
-        return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo}
+        return {"rementente": self.remetente.to_dict(),"destinatario": self.destinatario.to_dict(),"id":self.id,"assunto":self.assunto,"corpo":self.corpo, "message_fowarded": None if self.message == None else self.message.to_dict()}
     
 
-    def get_message_for_id(self, id):
-        command = """SELECT * FROM message WHERE id = {}""".format(id)
+    def get_message_by_id(self, id):
+        command = """SELECT * FROM message WHERE id = {}""".format(id if id != None else -1)
         messages = self.send_command_db(command, type='select')
 
         for message in messages:
@@ -317,10 +327,11 @@ class Message(ModelDB):
             destinatario=Usuario().get_usuario(id=message[2])
             assunto=message[3]
             corpo=message[4]
-            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id)
+            message_fowarded = Message().get_message_by_id(id=message[5])
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message=message_fowarded)
             return message_serializer
         return None
-    def get_messages_for_user_id(self, id):
+    def get_messages_by_user_id(self, id):
         command = """SELECT * FROM message WHERE destinatario_id = {} or remetente_id = {}""".format(id, id)
         messages = self.send_command_db(command, type='select')
         return_list = []
@@ -330,11 +341,23 @@ class Message(ModelDB):
             destinatario=Usuario().get_usuario(id=message[2])
             assunto=message[3]
             corpo=message[4]
-            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id).to_dict()
+            message_fowarded = Message().get_message_by_id(id=message[5])
+            message_serializer = Message(remetente=remetente, destinatario=destinatario, assunto=assunto, corpo=corpo, id=id, message=message_fowarded).to_dict()
+            print(message)
             print(message_serializer)
             return_list.append(message_serializer)
         return return_list
 
+class Foward(ModelDB):
+    def __init__(self, message=None, remetente=None, destinatario=None):
+        self.message = message
+        self.remetente = remetente
+        self.destinatario = destinatario
+        self.create_connection_db()
+    def save(self):
+        pass
 
+    def get_foward_by_id(self):
+        pass
 httpd = HTTPServer(('localhost', 8000), SimpleHTTPRequestHandler)
 httpd.serve_forever()
