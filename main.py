@@ -429,5 +429,5 @@ class Foward(ModelDB):
 
     def get_foward_by_id(self):
         pass
-httpd = HTTPServer(('localhost', int(os.environ.get('PORT', "8000"))), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('0.0.0.0', int(os.environ.get('PORT', "8000"))), SimpleHTTPRequestHandler)
 httpd.serve_forever()
