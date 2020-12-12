@@ -2,7 +2,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
 import sqlite3
 import json
-import os.environ
+import os
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     
@@ -429,5 +429,5 @@ class Foward(ModelDB):
 
     def get_foward_by_id(self):
         pass
-httpd = HTTPServer(('localhost', environ.get('PORT', "8000")), SimpleHTTPRequestHandler)
+httpd = HTTPServer(('localhost', os.environ.get('PORT', "8000")), SimpleHTTPRequestHandler)
 httpd.serve_forever()
