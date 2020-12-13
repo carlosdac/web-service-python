@@ -181,7 +181,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def login(self):
         post_data = self.get_body_request()
         try:
-            usuario = post_data['usuario']
+            usuario = post_data['usuario'].upper()
         except KeyError as e:
             self.send_response_custom(400, {"error": "Bad Request"})
             return
