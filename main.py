@@ -9,16 +9,16 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args ,**kwargs):
         self.routes_GET  = {
             '^/messages/$': self.get_all_messages,
-            '^/messages/[0-9]/$': self.get_one_message
+            '^/messages/\d+/$': self.get_one_message
             }
         self.routes_POST  = {
             '^/login/$': self.login,
             '^/messages/$': self.send_message,
-            '^/messages/[0-9]/foward/$': self.foward_message,
-            '^/messages/[0-9]/answer/$': self.answer_message,
+            '^/messages/\d+/foward/$': self.foward_message,
+            '^/messages/\d+/answer/$': self.answer_message,
         } 
         self.routes_DELETE = {
-            '^/messages/[0-9]/$': self.delete_message
+            '^/messages/\d+/$': self.delete_message
         }
         self.create_connection_db('db.sqlite3')
         self.create_tables()
