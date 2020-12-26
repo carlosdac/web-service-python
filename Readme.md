@@ -1,9 +1,15 @@
----
+<!DOCTYPE html>
+<html>
 
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Readme</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
 
----
-
-<ul>
+<body class="stackedit">
+  <div class="stackedit__html"><ul>
 <li>
 <h2 id="setup">Setup</h2>
 <ol>
@@ -168,4 +174,7 @@
 <td></td>
 </tr>
 </tbody>
-</table>
+</table></div>
+</body>
+
+</html>
