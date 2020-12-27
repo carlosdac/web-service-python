@@ -3,7 +3,7 @@
 	 1. Tenha o python3 instalado na sua máquina
 	 2. Através do pip instale o pacote virtualenv, com o seguinte comando: `pip3 install virtualenv`
 	 3. Para criar uma nova virtualenv digite o seguinte comando: `virtualenv noma_da_sua_env`. Será criada na pasta atual um diretório com o nome que você deu para a env.
-	 4. Para ativar sua env, você deve digitar no terminal `sua_env\scripts\activate` se estiver no windows, ou `sua_env\bin\activate` se estiver no linux.
+	 4. Para ativar sua env, você deve digitar no terminal `sua_env\scripts\activate` se estiver no windows, ou `sua_env/bin/activate` se estiver no linux.
 	 5. Para instalar os pacotes necessários para a execeução do projeto, navegue até as pastas backend e frontend e com a env ativada, digite o seguinte comando: `pip3 install -r requirements.txt`
 	 6. Pronto. Os pacotes foram instalados e você pode continuar para a execução nesse momento.
 - Execução
@@ -13,7 +13,7 @@
 		2. O servidor está configurado para escutar a variável de ambiente PORT, mas caso o SO não possua essa variável, ele escutará na porta 8080.
 		3. Pronto. O servidor está em execução.
 	3. Frontend
-		1. Com a env ativada, execute na pasta frontend o seguinte comando: `python3 manage.py runserver`
+		1. Com a env ativada, execute na pasta frontend os seguintes comandos: `python3 manage.py migrate` e `python3 manage.py runserver`
 		2. Pronto. O servidor está em execução no seguinte endereço: 127.0.0.1:8000
 		3. Basta acessar a endereço acima para ter acesso ao projeto.
 		4. Ele inicialmente está configurado para receber requisições do WS hospedado no heroku através do seguinte endereço: `https://stark-scrubland-14642.herokuapp.com/`
@@ -69,8 +69,4 @@
 **DELETE**
 |Rota          | Requer Login? |Descrição |
 |--------------|---------------|-----------|
-| messages/:id/| Sim           | Deleta uma mensagem enviada pelo usuário logado
- |
-<!--stackedit_data:
-eyJoaXN0b3J5IjpbMTM1NzU0NDkwNF19
--->
+| messages/:id/| Sim           | Deleta uma mensagem enviada pelo usuário logado|
