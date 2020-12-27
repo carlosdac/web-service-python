@@ -9,9 +9,9 @@
 - Execução
 	- 
 	1. Backend
-			1. Com a env ativada, execute na pasta backend o seguinte comando: `python3 main.py`
-			2. O servidor está configurado para escutar a variável de ambiente PORT, mas caso o SO não possua essa variável, ele escutará na porta 8080.
-			3. Pronto. O servidor está em execução.
+		1. Com a env ativada, execute na pasta backend o seguinte comando: `python3 main.py`
+		2. O servidor está configurado para escutar a variável de ambiente PORT, mas caso o SO não possua essa variável, ele escutará na porta 8080.
+		3. Pronto. O servidor está em execução.
 	3. Frontend
 		1. Com a env ativada, execute na pasta frontend o seguinte comando: `python3 manage.py runserver`
 		2. Pronto. O servidor está em execução no seguinte endereço: 127.0.0.1:8000
