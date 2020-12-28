@@ -17,7 +17,8 @@
 		2. Pronto. O servidor está em execução no seguinte endereço: 127.0.0.1:8000
 		3. Basta acessar a endereço acima para ter acesso ao projeto.
 		4. Ele inicialmente está configurado para receber requisições do WS hospedado no heroku através do seguinte endereço: `https://stark-scrubland-14642.herokuapp.com/`
-		5. Caso você queira mudar o endereço do WS, vá ao arquivo `.env` na pasta frontend e mude para o endereço que você desejar. Não esqueça de informar a porta e colocar o "/" no final da URL.
+		5. Caso você queira mudar o endereço do WS, vá ao arquivo `.env` na pasta frontend e mude para o endereço que você desejar. Não esqueça de informar a porta.
+		6. Caso prefira acessar a versão hospedada, basta acessar o seguinte link: `https://wsfrontcarlos.herokuapp.com/`
 
 - Endpoints
 	-
